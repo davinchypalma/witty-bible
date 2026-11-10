@@ -11,7 +11,10 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('wb.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('wb.' + k, JSON.stringify(v)); } catch (e) { /* storage full or blocked: not important */ } }
 };
-const DEFAULTS = { lang: 'auto', theme: 'auto', size: 19, version: 'KJV', red: true, italics: true, headings: true, yvKey: '', extra: true, strong: true };
+// lang 'auto': the app speaks the language of the Bible chosen (a French Bible: French; an English one: English).
+// The first time, the device's language picks the Bible: Louis Segond on a French device, KJV otherwise.
+const DEFAULTS = { lang: 'auto', theme: 'auto', size: 19, version: /^fr/i.test(navigator.language || '') ? 'LSG' : 'KJV', red: true, italics: true,
+  headings: true, yvKey: '', extra: true, strong: true };
 const set = Object.assign({}, DEFAULTS, store.get('settings', {}));
 const saveSettings = () => store.set('settings', set);
 
@@ -22,7 +25,7 @@ const S = {
 };
 const OFFLINE = ['KJV', 'BSB', 'UKJV', 'NHEB', 'DBY', 'LSG', 'JND', 'MAR', 'CRA', 'PGR'];
 const ALL = ['KJV', 'NKJV', 'NIV', 'BSB', 'UKJV', 'NHEB', 'DBY', 'LSG', 'JND', 'MAR', 'CRA', 'PGR'];
-const FRENCH = new Set(['LSG', 'JND', 'MAR', 'CRA', 'PGR']);     // French Bibles: with one, the themes are in French too
+const FRENCH = new Set(['LSG', 'JND', 'MAR', 'CRA', 'PGR']);     // French Bibles: with one, the app is in French
 const STRONG = new Set(['DBY', 'JND']);                         // with Strong's numbers: tap a word for its Hebrew or Greek
 const BIBLE_COM = { KJV: 1, NKJV: 114, NIV: 111, BSB: 3034, LSG: 93 };
 const $ = (id) => document.getElementById(id);
@@ -70,7 +73,7 @@ function toast(msg) {
 
 // ------------------------------------------------------------------ language and look
 function applyLang() {
-  const l = set.lang === 'auto' ? (/^fr/i.test(navigator.language || '') ? 'fr' : 'en') : set.lang;
+  const l = set.lang === 'auto' ? (FRENCH.has(set.version) ? 'fr' : 'en') : set.lang;   // the Bible's language, or the one fixed
   setLang(l);
   document.documentElement.lang = l;
 }
@@ -99,7 +102,7 @@ function text(ver) {                     // offline versions: { text[], titles{}
       d.paraSet = new Set(d.para);
       S.texts[ver] = d;
       return d;
-    });
+    }, (e) => { delete loading[ver]; throw e; });        // couldn't load (no connection): try again next time
   }
   return loading[ver];
 }
@@ -389,6 +392,15 @@ function openSheet(title, ...body) {
 function closeSheet() { $('sheet').hidden = true; $('scrim').hidden = true; }
 $('scrim').addEventListener('click', closeSheet);
 
+// A Bible chosen: the app takes its language (French or English), unless Settings › Language fixes one
+function useVersion(v) {
+  set.version = v; saveSettings();
+  $('verName').textContent = v;
+  closeSheet();
+  applyLang();
+  refresh();
+  if (S.view === 'settings') renderSettings();
+}
 function versionPicker() {
   const body = el('div');
   for (const [title, list] of [[t('verEnglish'), ALL.filter((v) => !FRENCH.has(v))], [t('verFrench'), ALL.filter((v) => FRENCH.has(v))]]) {
@@ -397,7 +409,7 @@ function versionPicker() {
       const online = !OFFLINE.includes(v);
       const ready = !online || YV.has(v);
       body.append(el('button', { class: 'opt' + (set.version === v ? ' on' : ''), type: 'button', onclick: () => {
-        set.version = v; saveSettings(); $('verName').textContent = v; closeSheet(); refresh();
+        useVersion(v);
         if (online && !ready) toast(t('needKey', { v }));
       } }, el('b', { text: v }), el('span', { class: 'd' }, t('versionNames')[v],
         el('small', { text: online ? `${t('online')} · YouVersion${ready ? '' : ' · ' + t('setUp')}` : t('offline') + (STRONG.has(v) ? ' · ' + t('withStrong') : '') }))));
@@ -730,6 +742,8 @@ function renderHome() {
 const mb = (b) => Math.max(1, Math.round(b / 1e6));
 const pct = () => (pwa.total ? Math.min(100, Math.floor((100 * pwa.have) / pwa.total)) : 0);
 function pwaSteps() {
+  // in Messenger's or Facebook's own browser: first open the page in Safari (only Safari puts it on the Home Screen)
+  if (pwa.inApp) return el('p', { class: 'small', style: 'margin:4px 0 0', text: t('pwaInApp') });
   const [a, b] = t('pwaSteps').split('{share}');
   return el('p', { class: 'small', style: 'margin:4px 0 0' }, a, el('span', { class: 'iosshare' }, svg('iosShare')), b || '');
 }
@@ -747,8 +761,8 @@ function pwaTick() {
 }
 // on Search: how the saving goes (app on the Home Screen), or how to put the app there (iPhone, in Safari)
 function pwaHome() {
-  if (!pwa.on) return null;
-  if (pwa.standalone && (pwa.state === 'saving' || pwa.state === 'paused')) return el('div', { class: 'banner pwa' }, pwaProgress());
+  if (!pwa.site) return null;
+  if (pwa.on && pwa.standalone && (pwa.state === 'saving' || pwa.state === 'paused')) return el('div', { class: 'banner pwa' }, pwaProgress());
   if (pwa.ios && !pwa.standalone && !store.get('pwaHintOff')) {
     return el('div', { class: 'banner pwa' }, el('div', { class: 'grow' }, el('b', { text: t('pwaInstall') }), pwaSteps()),
       el('button', { class: 'icon', type: 'button', title: t('pwaLater'), 'aria-label': t('pwaLater'), onclick: () => { store.set('pwaHintOff', true); renderHome(); } }, svg('close')));
@@ -757,7 +771,7 @@ function pwaHome() {
 }
 // in Settings: what is on the device, and a button to save it all (a browser other than Safari on the iPhone)
 function pwaPanel() {
-  if (!pwa.on) return null;
+  if (!pwa.site || (!pwa.on && !pwa.ios)) return null;
   const box = el('div', { class: 'panel' }, el('h2', { text: t('pwaTitle') }));
   if (pwa.ios && !pwa.standalone) {                     // Safari on the iPhone: the app on the Home Screen keeps its own files
     box.append(el('p', { class: 'small', style: 'font-weight:600;margin:0', text: t('pwaInstall') }), pwaSteps());
@@ -1128,7 +1142,8 @@ function renderSettings() {
   const size = el('input', { type: 'range', min: 15, max: 26, step: 1, value: set.size });
   size.addEventListener('input', () => { set.size = +size.value; applyLook(); saveSettings(); });
   v.append(el('div', { class: 'panel' },
-    el('div', { class: 'row' }, el('span', { class: 'lab', text: t('language') }), seg([['auto', t('langAuto')], ['en', 'English'], ['fr', 'Français']], set.lang, (x) => { set.lang = x; redo(); })),
+    el('div', { class: 'row' }, el('span', { class: 'lab' }, t('language'), el('small', { class: 'sub', text: t('langSub') })),
+      seg([['auto', t('langAuto')], ['en', 'English'], ['fr', 'Français']], set.lang, (x) => { set.lang = x; redo(); })),
     el('div', { class: 'row' }, el('span', { class: 'lab', text: t('appearance') }), seg([['auto', t('themeAuto')], ['light', t('themeLight')], ['dark', t('themeDark')]], set.theme, (x) => { set.theme = x; redo(); })),
     el('div', { class: 'row' }, el('span', { class: 'lab', text: t('textSize') }), size),
     el('div', { class: 'row' }, el('span', { class: 'lab', text: t('versionShown') }), el('button', { class: 'ver', type: 'button', onclick: versionPicker }, set.version, svg('versions'))),

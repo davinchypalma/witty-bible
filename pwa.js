@@ -6,7 +6,10 @@ import { VERSION } from './version.js';
 
 const nav = navigator;
 export const pwa = {
+  site: false,                                          // the web app's page (dist/pwa), in a browser
   on: false,                                            // a service worker keeps the files (web app only)
+  // inside another app's browser (Messenger, Facebook, Instagram): it can't put the page on the Home Screen
+  inApp: /FBAN|FBAV|FB_IAB|Instagram|Messenger/i.test(nav.userAgent),
   ios: /iP(hone|od|ad)/.test(nav.userAgent) || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1),
   standalone: matchMedia('(display-mode: standalone)').matches || nav.standalone === true,
   state: 'idle',                                        // idle → saving → ready, or paused (no connection)
@@ -27,7 +30,8 @@ export function startPWA() {
   started = true;
   // only the web app's page names its manifest (dist/pwa): not the programs' page, nor a browser while developing
   if (host.kind !== 'web' || !document.querySelector('link[rel="manifest"]')) return;
-  if (!('serviceWorker' in nav) || !window.isSecureContext || !window.caches) return;
+  pwa.site = true;
+  if (!('serviceWorker' in nav) || !window.isSecureContext || !window.caches) return;   // (other apps' browsers)
   pwa.on = true;
   document.documentElement.dataset.offline = pwa.state;
   let restarting = false;
