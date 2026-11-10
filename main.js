@@ -347,6 +347,7 @@ function startWorker() {
 firstStart().then(startWorker);
 function status(extra) {
   const st = $('status');
+  document.documentElement.dataset.state = !S.ready ? 'loading' : S.ai;   // for automated tests: loading, ok, off
   st.textContent = '';
   const msg = extra || (!S.ready ? t('loadingData') : S.ai === 'loading' ? t('loadingAI') : S.ai === 'off' ? t('aiOff') : '');
   if (!msg) return;

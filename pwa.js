@@ -15,7 +15,10 @@ export const pwa = {
   listeners: new Set(),
   onChange(f) { this.listeners.add(f); }
 };
-const changed = (what) => { for (const f of pwa.listeners) { try { f(what); } catch (e) { /* a view that went away */ } } };
+const changed = (what) => {
+  document.documentElement.dataset.offline = pwa.state;  // for automated tests: idle, saving, ready, paused
+  for (const f of pwa.listeners) { try { f(what); } catch (e) { /* a view that went away */ } }
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let started = false;
@@ -26,6 +29,7 @@ export function startPWA() {
   if (host.kind !== 'web' || !document.querySelector('link[rel="manifest"]')) return;
   if (!('serviceWorker' in nav) || !window.isSecureContext || !window.caches) return;
   pwa.on = true;
+  document.documentElement.dataset.offline = pwa.state;
   let restarting = false;
   nav.serviceWorker.addEventListener('controllerchange', () => { if (restarting) location.reload(); });
   pwa.restart = () => { if (pwa.waiting) { restarting = true; pwa.waiting.postMessage('restart'); } else location.reload(); };
