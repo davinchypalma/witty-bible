@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" class="booting">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.youversion.com; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="color-scheme" content="light dark">
+<title>Witty Bible</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1C2A47">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Witty Bible">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Find Bible verses by theme with AI, in English and French. Works without internet.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#" id="brand" aria-label="Witty Bible">
+    <svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><defs><radialGradient id="hdrglow" cx="256" cy="143" r="300" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2E4270"/><stop offset="1" stop-color="#1C2A47"/></radialGradient></defs><rect width="512" height="512" rx="112" fill="url(#hdrglow)"/><g transform="translate(0 18)"><polyline points="104.6,163.8 190,367.8 256,236.2 322,367.8 407.4,163.8" fill="none" stroke="#E2B451" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/><path d="M256 46 C262 94 270 109 306 120 C270 131 262 146 256 194 C250 146 242 131 206 120 C242 109 250 94 256 46 Z" fill="#E2B451"/></g></svg>
+    <span class="word">Witty <b>Bible</b></span>
+  </a>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+  <div class="tools">
+    <button class="ver" id="verBtn" type="button" aria-haspopup="dialog"><span id="verName">KJV</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button class="icon" id="themeBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button>
+    <button class="icon wide-only" id="setBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.7 7.7 0 0 0-2.6-1.5L14 2.4h-4l-.4 2.5A7.7 7.7 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.7 7.7 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.7 7.7 0 0 0 2.6-1.5l2.4.9 2-3.4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
+  </div>
+</header>
+
+<main id="main">
+  <section class="view" id="view-search" data-view="search">
+    <div class="hero">
+      <h1 id="heroTitle"></h1>
+      <p id="heroSub"></p>
+      <form class="search" id="searchForm" role="search" autocomplete="off">
+        <svg class="lens" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <input id="q" type="search" enterkeyhint="search" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="">
+        <button class="x" id="qClear" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+        <button class="go" id="qGo" type="submit"></button>
+      </form>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </div>
+    <div id="home"></div>
+    <div id="results" hidden></div>
+  </section>
+
+  <section class="view" id="view-read" data-view="read" hidden>
+    <div class="readbar">
+      <button class="pill" id="bookBtn" type="button"></button>
+      <div class="spacer"></div>
+      <button class="icon" id="prevCh" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="icon" id="nextCh" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+    <article class="chapter" id="chapter"></article>
+    <div class="selbar" id="selbar" hidden></div>
+  </section>
+
+  <section class="view" id="view-saved" data-view="saved" hidden></section>
+  <section class="view" id="view-settings" data-view="settings" hidden></section>
+</main>
+
+<nav class="bottom" id="bottom" role="tablist"></nav>
+<div class="scrim" id="scrim" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="main.js"></script>
+</body>
+</html>
