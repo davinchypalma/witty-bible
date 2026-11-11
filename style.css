@@ -321,6 +321,13 @@ textarea.field { resize: vertical; min-height: 70px; font-family: var(--f-ui); }
 @media (max-width: 420px) {
   .search .go { display: none; }
 }
+@media (max-width: 560px) {               /* a phone: a setting's choices go under its name, across the whole width */
+  .row.segrow { flex-wrap: wrap; row-gap: 8px; }
+  .row.segrow .lab { flex: 1 1 100%; }
+  .row.segrow .seg { flex: 1 1 100%; display: flex; border-radius: 16px; }
+  .row.segrow .seg button { flex: 1 1 auto; padding: 7px 9px; }
+  .row.segrow .seg.n4 { display: grid; grid-template-columns: 1fr 1fr; }      /* four choices: two by two */
+}
 @media print {
   .top, .bottom, .hero, .actions, .readbar, .selbar { display: none !important; }
   body { background: #fff; }

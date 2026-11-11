@@ -11,10 +11,12 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('wb.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('wb.' + k, JSON.stringify(v)); } catch (e) { /* storage full or blocked: not important */ } }
 };
-// lang 'auto': the app speaks the language of the Bible chosen (a French Bible: French; an English one: English).
-// The first time, the device's language picks the Bible: Louis Segond on a French device, KJV otherwise.
-const DEFAULTS = { lang: 'auto', theme: 'auto', size: 19, version: /^fr/i.test(navigator.language || '') ? 'LSG' : 'KJV', red: true, italics: true,
-  headings: true, yvKey: '', extra: true, strong: true };
+// lang 'auto': the app speaks the language of the Bible chosen (a French Bible: French; a Spanish one: Spanish; an
+// English one: English). The first time, the device's language picks the Bible: Louis Segond on a French device,
+// Reina-Valera 1909 on a Spanish one, KJV otherwise.
+const DEVICE = (navigator.language || '').slice(0, 2).toLowerCase();
+const DEFAULTS = { lang: 'auto', theme: 'auto', size: 19, version: DEVICE === 'fr' ? 'LSG' : DEVICE === 'es' ? 'RV1909' : 'KJV', red: true,
+  italics: true, headings: true, yvKey: '', extra: true, strong: true };
 const set = Object.assign({}, DEFAULTS, store.get('settings', {}));
 const saveSettings = () => store.set('settings', set);
 
@@ -23,9 +25,13 @@ const S = {
   read: store.get('read', { b: 42, c: 3 }), sel: new Set(), flash: -1, list: 'all', ready: false, ai: 'loading', votd: null,
   extraBooks: null, xflash: null, xchap: null
 };
-const OFFLINE = ['KJV', 'BSB', 'UKJV', 'NHEB', 'DBY', 'LSG', 'JND', 'MAR', 'CRA', 'PGR'];
-const ALL = ['KJV', 'NKJV', 'NIV', 'BSB', 'UKJV', 'NHEB', 'DBY', 'LSG', 'JND', 'MAR', 'CRA', 'PGR'];
+const OFFLINE = ['KJV', 'BSB', 'UKJV', 'NHEB', 'DBY', 'LSG', 'JND', 'MAR', 'CRA', 'PGR', 'RV1909', 'RV1865'];
+const ALL = ['KJV', 'NKJV', 'NIV', 'BSB', 'UKJV', 'NHEB', 'DBY', 'LSG', 'JND', 'MAR', 'CRA', 'PGR', 'RV1909', 'RV1865'];
 const FRENCH = new Set(['LSG', 'JND', 'MAR', 'CRA', 'PGR']);     // French Bibles: with one, the app is in French
+const SPANISH = new Set(['RV1909', 'RV1865']);                  // Spanish Bibles: with one, the app is in Spanish
+const bibleLang = (v) => (FRENCH.has(v) ? 'fr' : SPANISH.has(v) ? 'es' : 'en');
+// the Bible of the app's language, to show when the one chosen can't (online only, or a verse it doesn't have)
+const homeBible = () => ({ fr: 'LSG', es: 'RV1909' })[getLang()] || 'BSB';
 const STRONG = new Set(['DBY', 'JND']);                         // with Strong's numbers: tap a word for its Hebrew or Greek
 const BIBLE_COM = { KJV: 1, NKJV: 114, NIV: 111, BSB: 3034, LSG: 93 };
 const $ = (id) => document.getElementById(id);
@@ -73,9 +79,10 @@ function toast(msg) {
 
 // ------------------------------------------------------------------ language and look
 function applyLang() {
-  const l = set.lang === 'auto' ? (FRENCH.has(set.version) ? 'fr' : 'en') : set.lang;   // the Bible's language, or the one fixed
+  const l = set.lang === 'auto' ? bibleLang(set.version) : set.lang;   // the Bible's language, or the one fixed
   setLang(l);
   document.documentElement.lang = l;
+  if (l === 'es') tell({ type: 'warm', lang: 'es' });   // the search gets the Reina-Valera ready
 }
 function applyLook() {
   document.documentElement.dataset.theme = set.theme === 'auto' ? '' : set.theme;
@@ -280,14 +287,14 @@ async function verseText(ver, a, z) {
       if (ver === 'BSB') { const k = await text('KJV'); return { ver: 'KJV', markup: k.text[a], note: t('notInBSB') }; }
       if (ver === 'LSG') { const k = await text('KJV'); return { ver: 'KJV', markup: k.text[a], note: t('notInLSG') }; }
       if (ver !== 'KJV') {
-        const alt = FRENCH.has(ver) ? 'LSG' : 'KJV';
+        const alt = FRENCH.has(ver) ? 'LSG' : SPANISH.has(ver) ? (ver === 'RV1909' ? 'RV1865' : 'RV1909') : 'KJV';
         const k = await text(alt);
         return { ver: alt, markup: k.text[a], note: t('notInVer', { v: ver, alt }) };
       }
     }
     return { ver, markup: parts.join(' ') };
   }
-  const alt = getLang() === 'fr' ? 'LSG' : 'BSB';
+  const alt = homeBible();
   const fallback = async (note, reason) => { const r = await verseText(alt, a, z); r.note = note; r.reason = reason; r.link = YV.link(ver, a, z); return r; };
   if (!set.yvKey) return fallback(t('needKey', { v: ver }), 'key');
   if (!YV.has(ver)) return fallback(t('notLicensed', { v: ver, alt }), 'licence');
@@ -332,6 +339,7 @@ function ask(msg) {
     if (worker) worker.postMessage(m); else early.push(m);
   });
 }
+function tell(m) { if (worker) worker.postMessage(m); else early.push(m); }   // no answer expected
 function startWorker() {
   worker = new Worker('engine/worker.js', { type: 'module' });
   worker.onmessage = (e) => {
@@ -403,7 +411,8 @@ function useVersion(v) {
 }
 function versionPicker() {
   const body = el('div');
-  for (const [title, list] of [[t('verEnglish'), ALL.filter((v) => !FRENCH.has(v))], [t('verFrench'), ALL.filter((v) => FRENCH.has(v))]]) {
+  for (const l of ['en', 'fr', 'es']) {
+    const title = t({ en: 'verEnglish', fr: 'verFrench', es: 'verSpanish' }[l]), list = ALL.filter((v) => bibleLang(v) === l);
     body.append(el('h3', { class: 'vgroup', text: title }));
     for (const v of list) {
       const online = !OFFLINE.includes(v);
@@ -422,7 +431,10 @@ function versionPicker() {
 async function showVersions(a, z) {
   const box = el('div', { class: 'vers' });
   openSheet(t('versionsTitle') + ' · ' + lab(a, z), box);
-  for (const v of ALL) {
+  // the Bible being read first, then the others in its language, then the rest
+  const cur = ALL.includes(set.version) ? set.version : 'KJV', L = bibleLang(cur);
+  const order = [cur, ...ALL.filter((v) => v !== cur && bibleLang(v) === L), ...ALL.filter((v) => bibleLang(v) !== L)];
+  for (const v of order) {
     const row = el('div', { class: 'vrow' });
     const txt = el('div', { class: 'vt pending', text: t('loadingVerse', { v }) });
     const head = el('div', { class: 'vh' }, el('b', { text: v }), el('span', { text: t('versionNames')[v] }));
@@ -581,8 +593,8 @@ function clearSearch() {
   renderHome();
 }
 // the themes speak the Bible's language: French with a French Bible (and in the French app), English otherwise
-const themeLang = () => (getLang() === 'fr' || FRENCH.has(set.version) ? 'fr' : 'en');
-const themeName = (th) => (themeLang() === 'fr' ? th.fr : th.en);
+const themeLang = () => getLang();                    // the app's language, which follows the Bible's (or the one fixed)
+const themeName = (th) => th[themeLang()] || th.en;
 function renderResults() {
   const R = S.results;
   const box = $('results');
@@ -628,8 +640,8 @@ function renderResults() {
 
 // ------------------------------------------------------------------ the Ethiopian Bible's other books (non-biblical, shown apart)
 const xbook = (id) => (S.extraBooks || []).find((b) => b.id === id);
-const xname = (b) => (getLang() === 'fr' ? b.fr : b.en);
-const xtr = (b) => (b ? b.tr[getLang() === 'fr' ? 1 : 0] : '');
+const xname = (b) => b[getLang()] || b.en;
+const xtr = (b) => (b ? b.tr[{ en: 0, fr: 1, es: 2 }[getLang()]] || b.tr[0] : '');
 const xplain = (s) => String(s).replace(/<v>[^<]*<\/v>/g, '').replace(/\n/g, ' ').replace(/ {2,}/g, ' ').trim();
 function xlab(x, c, v1, v2) {
   const b = xbook(x), n = b ? xname(b) : x;
@@ -733,7 +745,7 @@ function renderHome() {
   for (const g of GROUPS) {
     const chips = el('div', { class: 'chips' });
     for (const th of THEMES.filter((x) => x.g === g.id)) chips.append(el('button', { class: 'chip', type: 'button', onclick: () => runTheme(th.id) }, themeName(th)));
-    groups.append(el('div', { class: 'group' }, el('h3', { text: themeLang() === 'fr' ? g.fr : g.en }), chips));
+    groups.append(el('div', { class: 'group' }, el('h3', { text: g[themeLang()] || g.en }), chips));
   }
   home.append(groups);
 }
@@ -906,9 +918,9 @@ async function renderReader() {
       if (my !== readSeq) return;
       body.textContent = '';
       if (r.ok) source = { online: r.verses };
-      else { useVer = getLang() === 'fr' ? 'LSG' : 'BSB'; body.append(el('div', { class: 'banner', text: t(r.status === 0 ? 'needNet' : 'notLicensed', { v: ver, alt: useVer }) })); }
+      else { useVer = homeBible(); body.append(el('div', { class: 'banner', text: t(r.status === 0 ? 'needNet' : 'notLicensed', { v: ver, alt: useVer }) })); }
     } else {
-      useVer = getLang() === 'fr' ? 'LSG' : 'BSB';
+      useVer = homeBible();
       body.append(el('div', { class: 'banner' }, el('span', { class: 'grow', text: t('needKey', { v: ver }) }), el('button', { class: 'btn small', type: 'button', onclick: () => setView('settings') }, t('setUp'))));
     }
   }
@@ -1111,7 +1123,7 @@ async function importSaved() {
 
 // ------------------------------------------------------------------ settings
 function seg(options, value, onpick) {
-  const s = el('div', { class: 'seg', role: 'radiogroup' });
+  const s = el('div', { class: 'seg n' + options.length, role: 'radiogroup' });
   for (const [v, label] of options) s.append(el('button', { class: v === value ? 'on' : '', type: 'button', role: 'radio', 'aria-checked': String(v === value), onclick: () => onpick(v) }, label));
   return s;
 }
@@ -1142,9 +1154,9 @@ function renderSettings() {
   const size = el('input', { type: 'range', min: 15, max: 26, step: 1, value: set.size });
   size.addEventListener('input', () => { set.size = +size.value; applyLook(); saveSettings(); });
   v.append(el('div', { class: 'panel' },
-    el('div', { class: 'row' }, el('span', { class: 'lab' }, t('language'), el('small', { class: 'sub', text: t('langSub') })),
-      seg([['auto', t('langAuto')], ['en', 'English'], ['fr', 'Français']], set.lang, (x) => { set.lang = x; redo(); })),
-    el('div', { class: 'row' }, el('span', { class: 'lab', text: t('appearance') }), seg([['auto', t('themeAuto')], ['light', t('themeLight')], ['dark', t('themeDark')]], set.theme, (x) => { set.theme = x; redo(); })),
+    el('div', { class: 'row segrow' }, el('span', { class: 'lab' }, t('language'), el('small', { class: 'sub', text: t('langSub') })),
+      seg([['auto', t('langAuto')], ['en', 'English'], ['fr', 'Français'], ['es', 'Español']], set.lang, (x) => { set.lang = x; redo(); })),
+    el('div', { class: 'row segrow' }, el('span', { class: 'lab', text: t('appearance') }), seg([['auto', t('themeAuto')], ['light', t('themeLight')], ['dark', t('themeDark')]], set.theme, (x) => { set.theme = x; redo(); })),
     el('div', { class: 'row' }, el('span', { class: 'lab', text: t('textSize') }), size),
     el('div', { class: 'row' }, el('span', { class: 'lab', text: t('versionShown') }), el('button', { class: 'ver', type: 'button', onclick: versionPicker }, set.version, svg('versions'))),
     el('label', { class: 'row' }, el('span', { class: 'lab', text: t('redLetters') }), sw(set.red, (x) => { set.red = x; saveSettings(); applyLook(); })),

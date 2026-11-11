@@ -19,7 +19,7 @@ function Extra(data, mat) {
   const names = data.books.flatMap((b, bi) => b.alias.map((a) => [fold(a), bi])).sort((x, y) => y[0].length - x[0].length);
   return { books: data.books, rows, mat, names };
 }
-const extraBook = (b) => ({ id: b.id, en: b.en, fr: b.fr, tr: b.tr, first: b.first, chapters: b.chapters.length });
+const extraBook = (b) => ({ id: b.id, en: b.en, fr: b.fr, es: b.es, tr: b.tr, first: b.first, chapters: b.chapters.length });
 function extraVerse(r, score) {
   const b = extra.books[r[0]];
   return { x: b.id, c: r[1], v: r[2], text: r[3], score };
@@ -91,6 +91,17 @@ async function loadData() {
   say({ type: 'ready', ms: Date.now() - t0 });
 }
 
+// The Reina-Valera 1909 for searching in Spanish: loaded the first time the app is in Spanish
+let spanish = null;
+function loadSpanish() {
+  if (!spanish) {
+    spanish = Promise.all([json('rv1909.json'), bin('emb-rv1909.bin'), bin('words-es.bin')]).then(([d, e, w]) => {
+      engine.setSpanish({ es: readMatrix(e), esPlain: d.text.map(strip), wordsEs: Engine.readWords(w) });
+    }).catch((err) => { spanish = null; throw err; });
+  }
+  return spanish;
+}
+
 async function loadAI() {
   try {
     const t0 = Date.now();
@@ -131,6 +142,7 @@ async function handle(m) {
     if (m.id < latest) return;                          // a newer search came in meanwhile
     latest = m.id;
     const text = clean(m.text);
+    if (m.lang === 'es') await loadSpanish().catch(() => {});   // without it, the English and French wordings still answer
     const q = sess ? await embed('query: ' + text) : null;
     if (m.id < latest) return;
     const t0 = performance.now();
@@ -147,7 +159,7 @@ async function handle(m) {
     let ex = [], place = null;
     if (q && m.extra !== false && engine.lastZ) {
       const all = extraSearch(q, 6), diff = all[0].score - engine.lastZ.max;
-      place = diff >= 0.01 ? 'top' : diff >= (m.lang === 'fr' ? -0.07 : -0.04) ? 'bottom' : null;
+      place = diff >= 0.01 ? 'top' : diff >= (m.lang === 'fr' || m.lang === 'es' ? -0.07 : -0.04) ? 'bottom' : null;
       if (place) ex = all.filter((x) => x.score >= all[0].score - 0.012).slice(0, place === 'top' ? 5 : 3);
     }
     say({ type: 'results', id: m.id, verses: r.verses, topics: r.topics, themes: r.themes, ai: !!q, extra: ex, extraPlace: place,
@@ -161,6 +173,8 @@ async function handle(m) {
     const b = extra.books.find((x) => x.id === m.x);
     const ch = b && b.chapters[m.c - b.first];
     say({ type: 'extraChapter', id: m.id, book: b ? extraBook(b) : null, c: m.c, verses: ch || [] });
+  } else if (m.type === 'warm') {                       // the app is now in Spanish: get its Bible ready for searching
+    if (m.lang === 'es') loadSpanish().catch(() => {});
   } else if (m.type === 'related') {
     say({ type: 'related', id: m.id, list: engine.related(m.i, 16) });
   }

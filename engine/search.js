@@ -1,5 +1,6 @@
 // Witty Bible: the search. Finds verses for a theme, a situation or words remembered, by combining:
-//  - meaning: the AI vector of the question against every verse (KJV and BSB wording, the closer one counts)
+//  - meaning: the AI vector of the question against every verse (KJV, BSB and Louis Segond wording, the closer one
+//    counts; with the app in Spanish, the Reina-Valera 1909's too)
 //  - themes: OpenBible.info themes close to the question, and the verses people voted best for them
 //  - headings: BSB section headings close to the question ("Do Not Worry") and the well-known verses under them
 //  - words: verses that contain the words typed (any form: forgive, forgiven, forgiveness), the exact phrase above all
@@ -80,6 +81,26 @@ export function stem(w) {
   return s;
 }
 
+// Spanish (the app in Spanish): its own small words and a rough stem: preocupación, preocupado → preocup
+const STOP_ES = new Set(('el la los las lo un una unos unas de del al a ante con contra en entre hacia hasta para por segun sin ' +
+  'sobre tras y e ni o u que se me te nos os le les mi mis tu tus su sus yo el ella nosotros ustedes ellos ellas este esta ' +
+  'estos estas ese esa esos esas es son era fue ser estar estoy estan hay muy mas menos no si como cuando donde porque pues ' +
+  'tambien ya algo quiero necesito busco versiculo versiculos biblia biblico dice habla acerca').split(' '));
+export function stemEs(w) {
+  if (w.length <= 3) return w;
+  const rules = [
+    [/(amientos|imientos|amiento|imiento)$/, ''], [/(aciones|uciones|acion|ucion)$/, ''], [/(mente)$/, ''], [/(idades|idad)$/, ''],
+    [/(ismos|ismo|istas|ista)$/, ''], [/(ables|able|ibles|ible)$/, ''], [/(osos|osas|oso|osa)$/, ''],
+    [/(ados|adas|ado|ada|idos|idas|ido|ida)$/, ''], [/(ando|iendo|aron|ieron|aban|ian|aria|eria|iria|emos|amos|imos|ara|era|ira)$/, ''],
+    [/(ar|er|ir|as|es|os|a|o|e|s)$/, '']
+  ];
+  for (const [re, r] of rules) {
+    const t = w.replace(re, r);
+    if (t !== w && t.length >= 3) return t;
+  }
+  return w;
+}
+
 // What people add around what they look for: "a verse about…", "what does the Bible say about…", "un verset sur…"
 const FILLER = [
   /^(please\s+)?(can you\s+|could you\s+)?(find|show|give|tell)(\s+me)?\s+/i,
@@ -90,7 +111,11 @@ const FILLER = [
   /^(trouve(-moi)?|donne(-moi)?|montre(-moi)?|cherche)\s+/i,
   /^(j'ai besoin d'|je cherche)\s*/i,
   /^que (dit|enseigne) la bible (sur|à propos de|au sujet de)\s+/i,
-  /^((un|le|les|des|quelques)\s+)?(versets?|passages?)(\s+bibliques?)?(\s+(sur|pour|qui (dit|parle de|parlent de)|où|quand|à lire quand|à propos de|au sujet de|de))?\s+/i
+  /^((un|le|les|des|quelques)\s+)?(versets?|passages?)(\s+bibliques?)?(\s+(sur|pour|qui (dit|parle de|parlent de)|où|quand|à lire quand|à propos de|au sujet de|de))?\s+/i,
+  /^(por favor\s+)?(busca(me)?|búscame|encuentra(me)?|encuéntrame|muestra(me)?|muéstrame|dame)\s+/i,
+  /^(necesito|quiero|busco|estoy buscando)\s+/i,
+  /^¿?qu[eé] dice la biblia (sobre|de|acerca de)\s+/i,
+  /^((un|el|los|unos|algunos)\s+)?(vers[ií]culos?|pasajes?|textos?)(\s+b[ií]blicos?)?(\s+(sobre|para|de|acerca de|que (dice|dicen|habla de|hablan de)|cuando))?\s+/i
 ];
 export function clean(text) {
   let s = String(text).trim().replace(/[?!.]+$/, '').trim();
@@ -111,6 +136,7 @@ export class Engine {
     this.semK = new Float32Array(this.n);
     this.semB = new Float32Array(this.n);
     this.semL = new Float32Array(this.n);
+    this.semE = new Float32Array(this.n);
     this.tsim = new Float32Array(d.topic.rows);
     this.hsim = new Float32Array(d.head.rows);
     this.asim = d.alias ? new Float32Array(d.alias.rows) : null;
@@ -131,7 +157,8 @@ export class Engine {
   }
 
   static WEIGHTS = { sem: 1.0, topic: 0.55, head: 0.25, lex: 0.45, phrase: 0.9, pop: 0.18, topicFloor: 0.84, topicFull: 0.95,
-    namedTheme: 0.965, namedBoost: 1.4, namedLex: 0.35, oneWord: 0.5, headFloor: 0.85, zFloor: 2.0, aliasFloor: 0.86, themeWeight: 0.8, segPenalty: 0.005 };
+    namedTheme: 0.965, namedBoost: 1.4, namedLex: 0.35, oneWord: 0.5, headFloor: 0.85, zFloor: 2.0, aliasFloor: 0.86, themeWeight: 0.8, segPenalty: 0.005,
+    esTopic: 0.02, esHead: 0.06 };   // Spanish questions meet English theme names and headings: they come out a little less close
 
   // words.bin (tools/build_words.mjs): the same index, made ahead of time
   static readWords(buffer) {
@@ -143,6 +170,19 @@ export class Engine {
     const map = new Map();
     for (let j = 0; j < ns; j++) map.set(names[j], post.subarray(offsets[j], offsets[j + 1]));
     return map;
+  }
+
+  // The Reina-Valera 1909: its vectors, its words and its word index (words-es.bin), used when the app is in Spanish
+  setSpanish({ es, esPlain, wordsEs }) {
+    this.es = es;
+    this.esPlain = esPlain;
+    this.indexEs = wordsEs;
+    this.normEs = null;
+  }
+
+  phraseTextEs() {
+    if (!this.normEs) this.normEs = this.esPlain.map((t) => ' ' + words(t).join(' ') + ' ');
+    return this.normEs;
   }
 
   // exact phrases: every verse's words in a row, made the first time a phrase is searched
@@ -190,17 +230,20 @@ export class Engine {
     const themes = [];
     let named = false;
     const cand = new Set();
+    const es = opts.lang === 'es' && this.es && this.indexEs;   // the app in Spanish: the Reina-Valera 1909 too
 
     // meaning
     if (q) {
       dots(this.kjv, q, this.semK);
       dots(this.bsb, q, this.semB);
       if (this.lsg) dots(this.lsg, q, this.semL);
+      if (es) dots(this.es, q, this.semE);
       let sum = 0, sum2 = 0, max = -1;
-      const sem = this.semK;                   // reused: the closest of the wordings (KJV, BSB, LSG)
+      const sem = this.semK;                   // reused: the closest of the wordings (KJV, BSB, LSG, RV1909)
       for (let i = 0; i < n; i++) {
         let v = this.semB[i] > sem[i] ? this.semB[i] : sem[i];
         if (this.lsg && this.semL[i] > v) v = this.semL[i];
+        if (es && this.semE[i] > v) v = this.semE[i];
         sem[i] = v;
       }
       if (this.seg) {                          // a part of a long, well-known verse can stand for the verse
@@ -226,6 +269,7 @@ export class Engine {
 
       // themes
       dots(this.topic, q, this.tsim);
+      if (es && W.esTopic) for (let t = 0; t < this.tsim.length; t++) this.tsim[t] += W.esTopic;
       // near-identical theme names count once ("struggle", "struggles", "struggling"), so others get a place
       const tt = [], seenNames = new Set();
       for (const t of topK(this.tsim, 24)) {
@@ -267,6 +311,7 @@ export class Engine {
 
       // headings
       dots(this.head, q, this.hsim);
+      if (es && W.esHead) for (let h = 0; h < this.hsim.length; h++) this.hsim[h] += W.esHead;
       const hh = topK(this.hsim, 5);
       const hbest = this.hsim[hh[0]];
       const hfloor = Math.max(W.headFloor, hbest - 0.05);
@@ -282,14 +327,15 @@ export class Engine {
       }
     }
 
-    // words and exact phrase
-    const ws = words(text).filter((w) => !STOP.has(w));
-    const terms = [...new Set(ws.map(stem))].filter((s) => s.length >= 2);
+    // words and exact phrase (in Spanish: the Reina-Valera 1909's words)
+    const ws = words(text).filter((w) => !(es ? STOP_ES : STOP).has(w));
+    const terms = [...new Set(ws.map(es ? stemEs : stem))].filter((s) => s.length >= 2);
+    const index = es ? this.indexEs : this.index;
     if (terms.length) {
       const hits = new Map(), rare = new Map();
       let idfSum = 0;
       for (const s of terms) {
-        const list = this.index.get(s);
+        const list = index.get(s);
         if (!list || list.length > 6000) continue;      // a word in every other verse says nothing
         const idf = Math.log(n / list.length) / Math.log(n);
         idfSum += idf;
@@ -312,7 +358,7 @@ export class Engine {
     const all = words(text);
     if (all.length >= 3) {
       const phrase = ' ' + all.join(' ') + ' ';
-      const norm = this.phraseText();
+      const norm = es ? this.phraseTextEs() : this.phraseText();
       for (let i = 0; i < n; i++) {
         if (norm[i].includes(phrase)) { score[i] += W.phrase; why[i] |= 16; cand.add(i); }
       }
