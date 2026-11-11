@@ -642,6 +642,8 @@ function renderResults() {
 const xbook = (id) => (S.extraBooks || []).find((b) => b.id === id);
 const xname = (b) => b[getLang()] || b.en;
 const xtr = (b) => (b ? b.tr[{ en: 0, fr: 1, es: 2 }[getLang()]] || b.tr[0] : '');
+// the translation a verse is in: in French, the book's French translation, or the English one for a verse it lacks
+const xtrOf = (b, l) => (b && getLang() === 'fr' && b.french && l !== 'fr' ? `${b.tr[0]} ${t('xEnglish')}` : xtr(b));
 const xplain = (s) => String(s).replace(/<v>[^<]*<\/v>/g, '').replace(/\n/g, ' ').replace(/ {2,}/g, ' ').trim();
 function xlab(x, c, v1, v2) {
   const b = xbook(x), n = b ? xname(b) : x;
@@ -649,7 +651,7 @@ function xlab(x, c, v1, v2) {
 }
 function xcard(it) {
   const label = xlab(it.x, it.c, it.v);
-  const line = () => `“${xplain(it.text)}” — ${label} (${xtr(xbook(it.x))})`;
+  const line = () => `“${xplain(it.text)}” — ${label} (${xtrOf(xbook(it.x), it.lang)})`;
   const body = el('div', { class: 'vt' });
   body.append(verseNodes(it.text));
   return el('div', { class: 'card xcard' },
@@ -680,7 +682,7 @@ function openExtra(x, c, v) {
 }
 async function renderExtraReader(my) {
   const { x, c } = S.read;
-  const r = await ask({ type: 'extraChapter', x, c });
+  const r = await ask({ type: 'extraChapter', x, c, lang: getLang() });
   if (my !== readSeq) return;
   if (!r.book) { S.read = { b: 42, c: 3 }; store.set('read', S.read); renderReader(); return; }
   const b = r.book, name = `${xname(b)} ${c}`;
@@ -694,11 +696,12 @@ async function renderExtraReader(my) {
   art.append(body);
   let p = el('p');
   body.append(p);
-  r.verses.forEach(([v, text], k) => {
+  r.verses.forEach(([v, text, l], k) => {
     const poem = text.includes('\n');
     if (poem && p.childNodes.length) { p = el('p'); body.append(p); }
     const span = el('span', { class: 'v', 'data-k': k }, el('span', { class: 'vn', text: v }));
     span.append(verseNodes(text), ' ');
+    if (getLang() === 'fr' && b.french && l !== 'fr') span.append(el('span', { class: 'xen', text: t('xEnglish') }), ' ');   // a verse the French lacks
     if (S.sel.has(k)) span.classList.add('sel');
     if (S.xflash && v === String(S.xflash)) span.classList.add('flash');
     span.addEventListener('click', () => toggleSel(k));
@@ -991,7 +994,7 @@ function renderSelbar() {
     const X = S.xchap;
     if (!X || X.x !== S.read.x || X.c !== S.read.c) { bar.hidden = true; return; }
     const label = xlab(X.x, X.c, X.verses[a][0], X.verses[z][0]);
-    const line = () => `“${X.verses.slice(a, z + 1).map(([, tx]) => xplain(tx)).join(' ')}” — ${label} (${xtr(xbook(X.x))})`;
+    const line = () => `“${X.verses.slice(a, z + 1).map(([, tx]) => xplain(tx)).join(' ')}” — ${label} (${xtrOf(xbook(X.x), X.verses[a][2])})`;
     bar.append(...[el('span', { class: 'label', text: label }),
       el('button', { class: 'act', type: 'button', onclick: async () => { await host.copy(line()); toast(t('copied')); } }, svg('copy'), el('span', { text: t('copy') })),
       host.canShare ? el('button', { class: 'act', type: 'button', onclick: () => host.share(line()) }, svg('share')) : null,
@@ -1273,5 +1276,5 @@ window.WBAndroid._system = () => applyLook();
   // a key saved earlier: check it again now and then (licences can change), quietly
   if (set.yvKey && (!YV.info || Date.now() - (YV.info.checked || 0) > 7 * 864e5)) YV.check().catch(() => {});
   // for automated tests
-  window.WB = { S, set, runSearch, runTheme, openAt, openChapter, setView, YV, ask, pwa };
+  window.WB = { S, set, runSearch, runTheme, openAt, openChapter, openExtra, setView, YV, ask, pwa };
 })();

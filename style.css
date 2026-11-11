@@ -375,6 +375,7 @@ main { padding-left: max(18px, env(safe-area-inset-left)); padding-right: max(18
 .banner.pwa .icon { width: 32px; height: 32px; margin: -5px -8px 0 0; flex: 0 0 auto; }
 .banner.pwa .icon svg { width: 18px; height: 18px; }
 .iosshare svg { display: inline-block; width: 17px; height: 17px; vertical-align: -3px; margin: 0 1px; color: var(--accent-text); }
+.xen { color: var(--muted); font-size: .8em; font-style: italic; }
 .pwaprog { flex: 1; }
 .pwaprog .bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 8px; }
 .pwaprog .bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .3s; }
